@@ -1,16 +1,12 @@
 import * as tf from '@tensorflow/tfjs';
-import { createWorker } from 'tesseract.js';
 
 export class ModelService {
   private static instance: ModelService;
   private tfModel: tf.LayersModel | null = null;
   private tfModelLoaded: boolean = false;
-  private tesseractWorker: any = null;
-  private tesseractLoaded: boolean = false;
-  private useTfModel: boolean = false;
 
   private constructor() {
-    this.initializeModels();
+    this.initializeModel();
   }
 
   public static getInstance(): ModelService {
@@ -20,27 +16,14 @@ export class ModelService {
     return ModelService.instance;
   }
 
-  private async initializeModels() {
+  private async initializeModel() {
     try {
-      // Initialize Tesseract first as it's more reliable
-      this.tesseractWorker = await createWorker();
-      await this.tesseractWorker.loadLanguage('eng');
-      await this.tesseractWorker.initialize('eng');
-      this.tesseractLoaded = true;
-      console.log('Tesseract initialized successfully');
-
-      // Try to load TensorFlow model
-      try {
-        this.tfModel = await tf.loadLayersModel('/models/model.json');
-        this.tfModelLoaded = true;
-        this.useTfModel = true;
-        console.log('TensorFlow model loaded successfully');
-      } catch (tfError) {
-        console.warn('TensorFlow model not available, using Tesseract only:', tfError);
-        this.useTfModel = false;
-      }
+      // Load the handwriting model
+      this.tfModel = await tf.loadLayersModel('/models/handwriting_model.h5');
+      this.tfModelLoaded = true;
+      console.log('Handwriting model loaded successfully');
     } catch (error) {
-      console.error('Error initializing models:', error);
+      console.error('Error initializing handwriting model:', error);
       throw error;
     }
   }
@@ -69,23 +52,9 @@ export class ModelService {
     });
   }
 
-  private async processWithTesseract(imageFile: File): Promise<string> {
-    if (!this.tesseractLoaded) {
-      throw new Error('Tesseract is not initialized yet');
-    }
-
-    try {
-      const result = await this.tesseractWorker.recognize(imageFile);
-      return result.data.text;
-    } catch (error) {
-      console.error('Tesseract processing error:', error);
-      throw error;
-    }
-  }
-
-  private async processWithTFModel(imageFile: File): Promise<string> {
-    if (!this.tfModelLoaded || !this.useTfModel) {
-      throw new Error('TensorFlow model is not available');
+  public async processImage(imageFile: File): Promise<string> {
+    if (!this.tfModelLoaded) {
+      throw new Error('Handwriting model is not initialized yet');
     }
 
     try {
@@ -98,59 +67,33 @@ export class ModelService {
 
       return this.processModelOutput(result);
     } catch (error) {
-      console.error('TensorFlow processing error:', error);
-      throw error;
-    }
-  }
-
-  public async processImage(imageFile: File): Promise<string> {
-    try {
-      // Always use Tesseract as primary
-      const tesseractResult = await this.processWithTesseract(imageFile);
-      
-      // Try to use TensorFlow model if available
-      let tfResult = '';
-      if (this.useTfModel) {
-        try {
-          tfResult = await this.processWithTFModel(imageFile);
-        } catch (tfError) {
-          console.warn('TensorFlow processing failed, using Tesseract result only:', tfError);
-        }
-      }
-
-      // If we have both results, combine them
-      if (tfResult) {
-        return this.combineResults(tesseractResult, tfResult);
-      }
-
-      // Otherwise, return Tesseract result
-      return tesseractResult;
-    } catch (error) {
       console.error('Error processing image:', error);
       throw error;
     }
   }
 
   private processModelOutput(output: Float32Array): string {
-    // Default implementation - returns the raw output
-    // This should be customized based on your model's output format
-    return Array.from(output)
-      .map(value => String.fromCharCode(Math.round(value * 255)))
-      .join('');
-  }
-
-  private combineResults(tesseractText: string, tfText: string): string {
-    // Simple combination strategy - you can implement more sophisticated logic
-    // For now, we'll use the longer text as it's likely more complete
-    return tesseractText.length > tfText.length ? tesseractText : tfText;
+    // Convert the model output to text
+    // This implementation assumes the model outputs probabilities for each character
+    // You may need to adjust this based on your model's specific output format
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    
+    // Process the output array in chunks of size equal to the number of possible characters
+    for (let i = 0; i < output.length; i += characters.length) {
+      const chunk = output.slice(i, i + characters.length);
+      const maxIndex = chunk.indexOf(Math.max(...chunk));
+      if (maxIndex >= 0 && maxIndex < characters.length) {
+        result += characters[maxIndex];
+      }
+    }
+    
+    return result;
   }
 
   public async terminate() {
     if (this.tfModel) {
       this.tfModel.dispose();
-    }
-    if (this.tesseractWorker) {
-      await this.tesseractWorker.terminate();
     }
   }
 } 

@@ -3,6 +3,7 @@ import { ModelService } from '../services/modelService';
 
 const ImageProcessor: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string>('');
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState<string>('');
   const [error, setError] = useState<string>('');
@@ -11,9 +12,28 @@ const ImageProcessor: React.FC = () => {
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setError('Please upload an image file');
+        return;
+      }
+
+      // Validate file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        setError('Image size should be less than 5MB');
+        return;
+      }
+
       setSelectedImage(file);
       setError('');
       setResult('');
+
+      // Create preview URL
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -51,7 +71,7 @@ const ImageProcessor: React.FC = () => {
         />
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
+          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
         >
           Select Image
         </button>
@@ -62,10 +82,20 @@ const ImageProcessor: React.FC = () => {
         )}
       </div>
 
+      {imagePreview && (
+        <div className="mb-6">
+          <img
+            src={imagePreview}
+            alt="Preview"
+            className="max-w-full h-auto rounded-lg shadow-md"
+          />
+        </div>
+      )}
+
       <button
         onClick={processImage}
         disabled={!selectedImage || processing}
-        className={`px-4 py-2 rounded ${
+        className={`px-4 py-2 rounded transition-colors ${
           !selectedImage || processing
             ? 'bg-gray-400 cursor-not-allowed'
             : 'bg-green-500 hover:bg-green-600'
@@ -82,8 +112,8 @@ const ImageProcessor: React.FC = () => {
 
       {result && (
         <div className="mt-4 p-4 bg-gray-100 rounded">
-          <h3 className="font-bold mb-2">Processed Result:</h3>
-          <p className="whitespace-pre-wrap">{result}</p>
+          <h3 className="font-bold mb-2">Extracted Text:</h3>
+          <p className="whitespace-pre-wrap font-mono">{result}</p>
         </div>
       )}
     </div>
